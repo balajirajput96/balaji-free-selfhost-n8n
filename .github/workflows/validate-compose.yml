@@ -1,0 +1,21 @@
+name: Validate Compose
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  compose-config:
+    runs-on: ubuntu-latest
+    env:
+      POSTGRES_PASSWORD: validation-only-password
+      N8N_ENCRYPTION_KEY: validation-only-encryption-key-32ch
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Docker Compose structure
+        run: docker compose -f compose.yaml config -q
