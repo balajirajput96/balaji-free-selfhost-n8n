@@ -1,0 +1,485 @@
+{
+  "name": "Pharma Prep & Daily Digest",
+  "nodes": [
+    {
+      "id": "d7b4e362-aff7-4306-ac63-c7b82e4e406c",
+      "name": "Sticky Note d7b4e362",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        896,
+        144
+      ],
+      "parameters": {
+        "content": "## Application Prep + Daily Digest\nRuns daily at 08:00 (Asia/Calcutta).\n1) For strong new matches (score >= 70), generates ATS resume content, cover letter,\n   LinkedIn headline/About, recruiter keywords, interview prep (GMP/GDP/QA/IPQA/\n   tablet compression/docs/BMR-BPR/deviation/CAPA/change control/ALCOA+), and an\n   outreach draft (only when a verified contact exists), saving them to the tracker.\n2) Emails you one prioritized digest (walk-ins first). Outreach is DRAFTS ONLY -\n   nothing is ever auto-sent to recruiters."
+      }
+    },
+    {
+      "id": "ced828bb-535b-4b0c-b354-b84991feead6",
+      "name": "Daily 8 AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        80
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "daysInterval": 1,
+              "triggerAtHour": 8,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "cbfa29a8-e0ea-4070-a122-248221ee9e94",
+      "name": "Get New Strong Rows",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        224,
+        80
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "zK7ALQFP6OcfRW6V",
+          "cachedResultName": "pharma_job_tracker"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "match_score",
+              "condition": "gte",
+              "keyValue": "70"
+            },
+            {
+              "keyName": "job_status",
+              "condition": "eq",
+              "keyValue": "new"
+            }
+          ]
+        },
+        "returnAll": true
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "id": "5b930ec4-a872-4ba8-99b4-ea470887848a",
+      "name": "Has New Rows",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        448,
+        80
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "hasnew",
+              "leftValue": "={{ $json.company_name }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "4339b413-775b-4794-93d5-da79698152d8",
+      "name": "Generate Materials",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [
+        672,
+        0
+      ],
+      "parameters": {
+        "resource": "text",
+        "operation": "response",
+        "modelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o-mini",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "responses": {
+          "values": [
+            {
+              "type": "text",
+              "role": "system",
+              "content": "You are an expert pharmaceutical career coach and ATS resume writer for a specific candidate.\n\nCANDIDATE PROFILE:\n- Diploma in Biotechnology, Parul University, India\n- 2 years experience in Pharmaceutical QA\n- Tablet Compression / OSD (Oral Solid Dosage) manufacturing exposure\n- Target locations: Vadodara, Ahmedabad, Gujarat, nearby India\n\nTASK: For the given job, produce tailored application and interview materials as JSON matching the schema:\n- resume_content: ATS-optimized resume bullet content tailored to THIS job (summary + skills + experience bullets using pharma QA keywords).\n- cover_letter: a concise, professional cover letter draft tailored to the company and role.\n- linkedin_headline: a strong LinkedIn headline for this candidate/role.\n- linkedin_about: a LinkedIn About section (first person).\n- recruiter_keywords: comma-separated ATS keywords a recruiter would search for this role.\n- interview_prep: a Q&A study sheet with model answers tuned to this candidate, covering GMP, GDP, QA/IPQA, Tablet Compression, Documentation, BMR/BPR, Deviation, CAPA, Change Control, and Data Integrity / ALCOA+.\n- outreach_draft: a short professional outreach message (email/WhatsApp) referencing the specific role, for the candidate to review.\n\nRULES: Do not fabricate certifications, employers, or metrics the candidate did not state. Keep claims consistent with 2 years QA experience and OSD/tablet exposure."
+            },
+            {
+              "type": "text",
+              "role": "user",
+              "content": "=Company: {{ $json.company_name }}\nJob title: {{ $json.job_title }}\nDepartment: {{ $json.department }}\nLocation: {{ $json.location }}\nExperience required: {{ $json.experience_required }}\nContact email (if any): {{ $json.contact_email }}\nContact phone (if any): {{ $json.contact_phone }}\n\nFull job text:\n{{ $json.raw_text }}"
+            }
+          ]
+        },
+        "simplify": true,
+        "options": {
+          "temperature": 0.4,
+          "maxTokens": 4000,
+          "textFormat": {
+            "textOptions": {
+              "type": "json_schema",
+              "name": "pharma_application_materials",
+              "strict": true,
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "resume_content",
+                  "cover_letter",
+                  "linkedin_headline",
+                  "linkedin_about",
+                  "recruiter_keywords",
+                  "interview_prep",
+                  "outreach_draft"
+                ],
+                "properties": {
+                  "resume_content": {
+                    "type": "string"
+                  },
+                  "cover_letter": {
+                    "type": "string"
+                  },
+                  "linkedin_headline": {
+                    "type": "string"
+                  },
+                  "linkedin_about": {
+                    "type": "string"
+                  },
+                  "recruiter_keywords": {
+                    "type": "string"
+                  },
+                  "interview_prep": {
+                    "type": "string"
+                  },
+                  "outreach_draft": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "credentials": {}
+    },
+    {
+      "id": "b8cd0b97-8776-4477-adbf-5f10dd557790",
+      "name": "Parse Materials",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "let ai = null;\ntry {\n  const raw = $json.output[0].content[0].text;\n  ai = (typeof raw === 'string') ? JSON.parse(raw) : raw;\n} catch (e) { ai = null; }\n\nconst row = $(\"Get New Strong Rows\").item.json;\nconst hasContact = String(row.contact_email || '').trim() !== '' || String(row.contact_phone || '').trim() !== '';\n\nif (!ai) {\n  return { json: { source_id: row.source_id, skip: true } };\n}\n\nlet outreach = ai.outreach_draft || '';\nif (!hasContact) {\n  outreach = \"No verified contact available - no outreach drafted.\";\n}\n\nreturn { json: {\n  source_id: row.source_id,\n  skip: false,\n  resume_content: ai.resume_content || '',\n  cover_letter: ai.cover_letter || '',\n  linkedin_headline: ai.linkedin_headline || '',\n  linkedin_about: ai.linkedin_about || '',\n  recruiter_keywords: ai.recruiter_keywords || '',\n  interview_prep: ai.interview_prep || '',\n  outreach_draft: outreach,\n} };"
+      }
+    },
+    {
+      "id": "f8b44775-dd57-480f-8519-31844257f5ed",
+      "name": "Save Materials",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1120,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "zK7ALQFP6OcfRW6V",
+          "cachedResultName": "pharma_job_tracker"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "source_id",
+              "condition": "eq",
+              "keyValue": "={{ $json.source_id }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "resume_content": "={{ $json.resume_content }}",
+            "cover_letter": "={{ $json.cover_letter }}",
+            "linkedin_headline": "={{ $json.linkedin_headline }}",
+            "linkedin_about": "={{ $json.linkedin_about }}",
+            "recruiter_keywords": "={{ $json.recruiter_keywords }}",
+            "interview_prep": "={{ $json.interview_prep }}",
+            "outreach_draft": "={{ $json.outreach_draft }}",
+            "job_status": "prepped"
+          },
+          "schema": [
+            {
+              "id": "resume_content",
+              "displayName": "resume_content",
+              "required": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "cover_letter",
+              "displayName": "cover_letter",
+              "required": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "linkedin_headline",
+              "displayName": "linkedin_headline",
+              "required": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "linkedin_about",
+              "displayName": "linkedin_about",
+              "required": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "recruiter_keywords",
+              "displayName": "recruiter_keywords",
+              "required": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "interview_prep",
+              "displayName": "interview_prep",
+              "required": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "outreach_draft",
+              "displayName": "outreach_draft",
+              "required": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "job_status",
+              "displayName": "job_status",
+              "required": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "51c11aed-b5c6-4df1-b169-948afd41ec65",
+      "name": "Get Digest Rows",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1344,
+        80
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "zK7ALQFP6OcfRW6V",
+          "cachedResultName": "pharma_job_tracker"
+        },
+        "returnAll": true
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "a56f3e78-4442-45be-b88c-321011a7476c",
+      "name": "Build Digest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1568,
+        80
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const LF = String.fromCharCode(10);\nconst all = $input.all().map(function (i) { return i.json; });\nconst rows = all.filter(function (r) {\n  return r && (r.job_status === 'new' || r.job_status === 'prepped') && r.company_name;\n});\nrows.sort(function (a, b) {\n  const pa = Number(a.priority_rank) || 99;\n  const pb = Number(b.priority_rank) || 99;\n  if (pa !== pb) return pa - pb;\n  return (Number(b.match_score) || 0) - (Number(a.match_score) || 0);\n});\nconst top = rows.slice(0, 15);\nfunction nv(v) { return (v !== undefined && v !== null && String(v).trim() !== '') ? String(v) : 'not verified'; }\nfunction esc(v) { return String(v === undefined || v === null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }\n\nconst parts = [];\nparts.push('<div style=\"font-family:Arial,sans-serif;font-size:14px;color:#222\">');\nparts.push('<p style=\"background:#fff3cd;border:1px solid #ffe69c;padding:10px;border-radius:6px\"><strong>DRAFTS ONLY - nothing has been sent to any recruiter. Reply to approve any outreach.</strong></p>');\n\nif (top.length === 0) {\n  parts.push('<p>No new matching pharma QA jobs today. Your monitors are still running.</p>');\n} else {\n  parts.push('<p>Top ' + top.length + ' pharma QA opportunities (walk-ins first, then direct, then upcoming):</p>');\n  for (let k = 0; k < top.length; k++) {\n    const j = top[k];\n    parts.push('<div style=\"border:1px solid #ddd;border-radius:8px;padding:12px;margin-bottom:12px\">');\n    parts.push('<h3 style=\"margin:0 0 6px\">' + (k + 1) + '. ' + esc(j.company_name) + ' - ' + esc(j.job_title) + '</h3>');\n    parts.push('<p style=\"margin:2px 0\"><strong>Match score:</strong> ' + (Number(j.match_score) || 0) + '/100 &nbsp; | &nbsp; <strong>Type:</strong> ' + esc(j.opportunity_type || '') + ' &nbsp; | &nbsp; <strong>Verification:</strong> ' + esc(j.verification_status || 'not verified') + '</p>');\n    parts.push('<p style=\"margin:2px 0\"><strong>Department:</strong> ' + esc(nv(j.department)) + '</p>');\n    parts.push('<p style=\"margin:2px 0\"><strong>Location:</strong> ' + esc(nv(j.location)) + ' &nbsp; <strong>Address:</strong> ' + esc(nv(j.address)) + '</p>');\n    parts.push('<p style=\"margin:2px 0\"><strong>Walk-in:</strong> ' + esc(nv(j.walkin_datetime)) + ' &nbsp; <strong>Venue:</strong> ' + esc(nv(j.walkin_venue)) + '</p>');\n    parts.push('<p style=\"margin:2px 0\"><strong>Experience:</strong> ' + esc(nv(j.experience_required)) + ' &nbsp; <strong>Salary/CTC:</strong> ' + esc(nv(j.salary_ctc)) + '</p>');\n    parts.push('<p style=\"margin:2px 0\"><strong>Company:</strong> ' + esc(nv(j.company_size_type)) + '</p>');\n    parts.push('<p style=\"margin:2px 0\"><strong>Email:</strong> ' + esc(nv(j.contact_email)) + ' &nbsp; <strong>Phone:</strong> ' + esc(nv(j.contact_phone)) + ' &nbsp; <strong>WhatsApp:</strong> ' + esc(nv(j.contact_whatsapp)) + '</p>');\n    const link = (j.apply_link && String(j.apply_link).trim() !== '') ? ('<a href=\"' + esc(j.apply_link) + '\">' + esc(j.apply_link) + '</a>') : 'not verified';\n    parts.push('<p style=\"margin:2px 0\"><strong>Apply:</strong> ' + link + '</p>');\n    if (j.job_status === 'prepped') {\n      parts.push('<p style=\"margin:6px 0 0;color:#0a6\">Resume, cover letter, LinkedIn content, keywords, interview prep and an outreach draft are ready in your tracker for approval.</p>');\n    }\n    parts.push('</div>');\n  }\n}\nparts.push('</div>');\n\nconst html = parts.join(LF);\nconst subject = 'Pharma QA Job Digest - ' + top.length + ' matches (' + ($now.toFormat('dd LLL yyyy')) + ')';\nreturn [{ json: { subject: subject, html: html, count: top.length } }];"
+      }
+    },
+    {
+      "id": "314bccc7-cc74-436b-aa1d-84a34b328570",
+      "name": "Email Digest",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1792,
+        80
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "authentication": "oAuth2",
+        "sendTo": "<__PLACEHOLDER_VALUE__Candidate email for digest__>",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {},
+      "executeOnce": true,
+      "webhookId": "14189f55-6c36-448b-bebd-e5defc21b018"
+    }
+  ],
+  "connections": {
+    "Daily 8 AM": {
+      "main": [
+        [
+          {
+            "node": "Get New Strong Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get New Strong Rows": {
+      "main": [
+        [
+          {
+            "node": "Has New Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has New Rows": {
+      "main": [
+        [
+          {
+            "node": "Generate Materials",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Digest Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Materials": {
+      "main": [
+        [
+          {
+            "node": "Parse Materials",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Materials": {
+      "main": [
+        [
+          {
+            "node": "Save Materials",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Materials": {
+      "main": [
+        [
+          {
+            "node": "Get Digest Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Digest Rows": {
+      "main": [
+        [
+          {
+            "node": "Build Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Digest": {
+      "main": [
+        [
+          {
+            "node": "Email Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "availableInMCP": true
+  },
+  "staticData": null,
+  "pinData": {},
+  "triggerCount": 0,
+  "meta": null
+}

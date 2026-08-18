@@ -1,0 +1,206 @@
+{
+  "name": "Pharma Email-Forward Intake",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Email-Forward Job Intake\nForward any pharma job email to your Gmail with the label \"JobIntake\"\n(or edit the trigger query). Each forwarded email is parsed and sent to the\nPharma Job Processing Engine, which filters, scores, dedups, and stores matches.\nOnly links actually present in the email are captured — nothing is invented."
+      },
+      "id": "7aeaff29-53f2-42d3-9ba7-0ebecda27ec0",
+      "name": "Sticky Note 7aeaff29",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        336,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "simple": false,
+        "filters": {
+          "q": "label:JobIntake",
+          "readStatus": "unread"
+        },
+        "options": {}
+      },
+      "id": "b9856958-7e3f-45c8-8a74-52aed0b644c5",
+      "name": "On Forwarded Email",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        0
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "5U565mPbvviYntTn",
+          "name": "Gmail OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const j = $json;\nconst subject = j.subject || '';\n// Prefer plain text; fall back to stripping HTML tags.\nlet body = j.text || '';\nif (!body && (j.textAsHtml || j.html)) {\n  body = String(j.textAsHtml || j.html).replace(/<[^>]+>/g, ' ');\n}\nbody = String(body).replace(/\\s+/g, ' ').trim();\n\nconst parts = [];\nif (subject) parts.push('Subject: ' + subject);\nif (body) parts.push(body);\nconst raw_text = parts.join('\\n');\n\n// Capture the first http(s) URL in the body as the apply link. Never invent one.\nlet apply_link = '';\nconst m = body.match(/https?:\\/\\/[^\\s\"\\)<>]+/);\nif (m) apply_link = m[0];\n\nconst has_content = (subject.trim().length > 0 || body.length > 0);\n\nreturn { json: {\n  has_content: has_content,\n  raw_text: raw_text,\n  source: 'email_forward',\n  apply_link: apply_link,\n  source_url: apply_link,\n} };"
+      },
+      "id": "bc1bcb87-1c49-4a11-84c7-7ddc5ca61fa1",
+      "name": "Build Job Record",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "hascontent",
+              "leftValue": "={{ $json.has_content }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c824a55d-61f6-4a01-b27f-a49d5aad09e5",
+      "name": "Has Content",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        448,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "Wu57RT3M2MP7QqRV",
+          "cachedResultName": "Pharma Job Processing Engine"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "raw_text": "={{ $json.raw_text }}",
+            "source": "={{ $json.source }}",
+            "apply_link": "={{ $json.apply_link }}",
+            "source_url": "={{ $json.source_url }}"
+          },
+          "schema": [
+            {
+              "id": "raw_text",
+              "displayName": "raw_text",
+              "required": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "apply_link",
+              "displayName": "apply_link",
+              "required": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source_url",
+              "displayName": "source_url",
+              "required": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "matchingColumns": []
+        },
+        "options": {}
+      },
+      "id": "5e93b7ba-9995-48f7-8cb1-76634e045160",
+      "name": "Send to Engine",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        672,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "On Forwarded Email": {
+      "main": [
+        [
+          {
+            "node": "Build Job Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Job Record": {
+      "main": [
+        [
+          {
+            "node": "Has Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Content": {
+      "main": [
+        [
+          {
+            "node": "Send to Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "availableInMCP": true,
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "pinData": {},
+  "triggerCount": 0,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  }
+}

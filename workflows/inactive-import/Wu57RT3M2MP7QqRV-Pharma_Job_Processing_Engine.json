@@ -1,0 +1,716 @@
+{
+  "name": "[Review before activation] Pharma Job Processing Engine",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Job Processing Engine\nCalled by intake channels (RSS, email, form) via Execute Workflow.\nExtracts + scores a job posting, filters to pharma QA roles & 2yr experience band,\ndeduplicates by source_id, and inserts into the pharma_job_tracker Data Table.\nStrict never-invent rule: uncertain contact/date/salary/address stays empty & \"not verified\"."
+      },
+      "id": "b75fc155-5b44-4f75-8de5-ca6a7621625c",
+      "name": "Sticky Note b75fc155",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        784,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "raw_text"
+            },
+            {
+              "name": "source"
+            },
+            {
+              "name": "apply_link"
+            },
+            {
+              "name": "source_url"
+            }
+          ]
+        }
+      },
+      "id": "1cb7c178-76c6-4d55-9d69-a210b3e66e58",
+      "name": "Job Input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "hastext",
+              "leftValue": "={{ $json.raw_text }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "5c6dc6dd-f108-4702-aa1c-6fdedd5556f1",
+      "name": "Has Text",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o-mini",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "responses": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a strict pharmaceutical job-posting extraction and scoring engine for a specific candidate.\n\nCANDIDATE PROFILE:\n- Diploma in Biotechnology, Parul University, India\n- 2 years experience in Pharmaceutical QA\n- Tablet Compression / OSD (Oral Solid Dosage) manufacturing exposure\n- Target locations: Vadodara, Ahmedabad, Gujarat, nearby India\n- Goal: get a QA job fast.\n\nTASK: Read the job posting text and return ONLY a JSON object matching the schema.\n\nCRITICAL NEVER-INVENT RULE:\n- Only extract values that are EXPLICITLY present in the text.\n- If a value (email, phone, whatsapp, interview/walk-in date, salary/CTC, address, venue) is not explicitly stated, return an empty string \"\".\n- NEVER guess, infer, or fabricate contact details, dates, salary, or addresses.\n\nRELEVANCE: is_pharma_qa_relevant = true only if the role is a pharmaceutical QA-family role.\nmatched_role must be the single best match among the allowed roles, or \"none\" if it is not a pharma QA-family role\n(QA Executive/Officer, IPQA Executive/Officer, Production QA, Manufacturing QA, Documentation QA, QC Support,\nBMR/BPR Review, Line Clearance/In-process Quality, OSD/Tablet manufacturing). Non-QA pharma roles (pure QC lab,\nsales, marketing, R&D formulation-only, regulatory-only, etc.) and non-pharma roles get matched_role=\"none\" and is_pharma_qa_relevant=false.\n\nEXPERIENCE: parse experience_required into experience_min and experience_max integer years. If a single number, set both.\nIf not stated, set both to null.\n\nOPPORTUNITY TYPE: \"walkin\" if it is a walk-in interview; \"upcoming\" if it mentions an interview scheduled on a future date but not a walk-in;\n\"direct\" if it is a standard vacancy/apply-online posting; \"unknown\" if unclear.\n\nVERIFICATION: verification_status=\"verified\" only if the posting is clearly from an official company source or contains explicit official contact details;\notherwise \"not verified\".\n\nSCORING: match_score is an integer 0-100 summing these weighted factors for THIS candidate:\n- role match (target QA/IPQA/Production/Manufacturing/Documentation QA, OSD roles) ~25\n- experience match (fits ~2 years, or bands like 1-3, 2-5, 2-7) ~20\n- location match (Vadodara/Ahmedabad highest, then Gujarat, then nearby India) ~20\n- QA/IPQA relevance ~10\n- OSD / tablet compression fit ~10\n- salary attractiveness if stated ~5\n- company quality/type ~5\n- hiring urgency (walk-in, or interview within next 7-15 days = higher) ~5\nPut a concise per-factor explanation in score_breakdown."
+            },
+            {
+              "content": "=Job posting source: {{ $json.source }}\nApply link (if any): {{ $json.apply_link }}\n\nJOB POSTING TEXT:\n{{ $json.raw_text }}"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {
+          "maxTokens": 3000,
+          "textFormat": {
+            "textOptions": {
+              "type": "json_schema",
+              "name": "pharma_job_extraction",
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "company_name",
+                  "job_title",
+                  "department",
+                  "location",
+                  "address",
+                  "walkin_datetime",
+                  "walkin_venue",
+                  "apply_link",
+                  "contact_email",
+                  "contact_phone",
+                  "contact_whatsapp",
+                  "experience_required",
+                  "salary_ctc",
+                  "company_size_type",
+                  "is_pharma_qa_relevant",
+                  "matched_role",
+                  "experience_min",
+                  "experience_max",
+                  "opportunity_type",
+                  "match_score",
+                  "score_breakdown",
+                  "verification_status",
+                  "reasoning"
+                ],
+                "properties": {
+                  "company_name": {
+                    "type": "string"
+                  },
+                  "job_title": {
+                    "type": "string"
+                  },
+                  "department": {
+                    "type": "string"
+                  },
+                  "location": {
+                    "type": "string"
+                  },
+                  "address": {
+                    "type": "string"
+                  },
+                  "walkin_datetime": {
+                    "type": "string"
+                  },
+                  "walkin_venue": {
+                    "type": "string"
+                  },
+                  "apply_link": {
+                    "type": "string"
+                  },
+                  "contact_email": {
+                    "type": "string"
+                  },
+                  "contact_phone": {
+                    "type": "string"
+                  },
+                  "contact_whatsapp": {
+                    "type": "string"
+                  },
+                  "experience_required": {
+                    "type": "string"
+                  },
+                  "salary_ctc": {
+                    "type": "string"
+                  },
+                  "company_size_type": {
+                    "type": "string"
+                  },
+                  "is_pharma_qa_relevant": {
+                    "type": "boolean"
+                  },
+                  "matched_role": {
+                    "type": "string",
+                    "enum": [
+                      "QA Executive/Officer",
+                      "IPQA Executive/Officer",
+                      "Production QA",
+                      "Manufacturing QA",
+                      "Documentation QA",
+                      "QC Support",
+                      "BMR/BPR Review",
+                      "Line Clearance/In-process Quality",
+                      "OSD/Tablet manufacturing",
+                      "none"
+                    ]
+                  },
+                  "experience_min": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "experience_max": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "opportunity_type": {
+                    "type": "string",
+                    "enum": [
+                      "walkin",
+                      "direct",
+                      "upcoming",
+                      "unknown"
+                    ]
+                  },
+                  "match_score": {
+                    "type": "integer"
+                  },
+                  "score_breakdown": {
+                    "type": "string"
+                  },
+                  "verification_status": {
+                    "type": "string",
+                    "enum": [
+                      "verified",
+                      "not verified"
+                    ]
+                  },
+                  "reasoning": {
+                    "type": "string"
+                  }
+                }
+              },
+              "strict": true
+            }
+          },
+          "temperature": 0.1
+        }
+      },
+      "id": "9e5a6c9f-2dbb-48f1-bffe-13f1d555623f",
+      "name": "Extract & Score Job",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [
+        448,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "let ai = null;\ntry {\n  const raw = $json.output[0].content[0].text;\n  ai = (typeof raw === 'string') ? JSON.parse(raw) : raw;\n} catch (e) { ai = null; }\n\nconst t = $(\"Job Input\").item.json;\n\nfunction slug(v) {\n  return String(v || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');\n}\n\nif (!ai) {\n  return { json: { keep: false, drop_reason: \"ai_parse_failed\" } };\n}\n\nconst relevant = ai.is_pharma_qa_relevant === true && ai.matched_role && ai.matched_role !== \"none\";\nconst effMin = (ai.experience_min === null || ai.experience_min === undefined) ? 0 : Number(ai.experience_min);\nconst effMax = (ai.experience_max === null || ai.experience_max === undefined) ? 999 : Number(ai.experience_max);\nconst expOk = effMin <= 2 && effMax >= 2;\nconst keep = relevant && expOk;\n\nconst ot = ai.opportunity_type || \"unknown\";\nlet priority_rank = 4;\nif (ot === \"walkin\") priority_rank = 1;\nelse if (ot === \"direct\") priority_rank = 2;\nelse if (ot === \"upcoming\") priority_rank = 3;\n\nconst source_id = slug(ai.company_name) + \"|\" + slug(ai.job_title) + \"|\" + slug(ai.location);\n\nconst applyLink = ai.apply_link || t.apply_link || \"\";\n\nreturn { json: {\n  keep: keep,\n  drop_reason: keep ? \"\" : (!relevant ? \"not_relevant\" : \"experience_mismatch\"),\n  source_id: source_id,\n  source: t.source || \"\",\n  company_name: ai.company_name || \"\",\n  job_title: ai.job_title || \"\",\n  department: ai.department || \"\",\n  location: ai.location || \"\",\n  address: ai.address || \"\",\n  walkin_datetime: ai.walkin_datetime || \"\",\n  walkin_venue: ai.walkin_venue || \"\",\n  apply_link: applyLink,\n  contact_email: ai.contact_email || \"\",\n  contact_phone: ai.contact_phone || \"\",\n  contact_whatsapp: ai.contact_whatsapp || \"\",\n  experience_required: ai.experience_required || \"\",\n  salary_ctc: ai.salary_ctc || \"\",\n  company_size_type: ai.company_size_type || \"\",\n  match_score: Number(ai.match_score) || 0,\n  score_breakdown: ai.score_breakdown || \"\",\n  opportunity_type: ot,\n  priority_rank: priority_rank,\n  verification_status: ai.verification_status || \"not verified\",\n  raw_text: t.raw_text || \"\",\n} };"
+      },
+      "id": "7a02f589-0c6d-4040-b034-43e675a7521c",
+      "name": "Prepare Job Record",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "keep",
+              "leftValue": "={{ $json.keep }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "88c7f54c-8fdb-4874-a013-e793218c3e50",
+      "name": "Should Keep",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        896,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "zK7ALQFP6OcfRW6V",
+          "cachedResultName": "pharma_job_tracker"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "source_id",
+              "keyValue": "={{ $json.source_id }}"
+            }
+          ]
+        },
+        "limit": 1
+      },
+      "id": "a37ac692-4c2a-4266-b04f-5fc595254226",
+      "name": "Find Existing",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1120,
+        0
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "isnew",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notExists",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6f950b9b-703e-438d-8ae0-4a5a07f42e54",
+      "name": "Is New",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1344,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "zK7ALQFP6OcfRW6V",
+          "cachedResultName": "pharma_job_tracker"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "source_id": "={{ $('Prepare Job Record').item.json.source_id }}",
+            "source": "={{ $('Prepare Job Record').item.json.source }}",
+            "company_name": "={{ $('Prepare Job Record').item.json.company_name }}",
+            "job_title": "={{ $('Prepare Job Record').item.json.job_title }}",
+            "department": "={{ $('Prepare Job Record').item.json.department }}",
+            "location": "={{ $('Prepare Job Record').item.json.location }}",
+            "address": "={{ $('Prepare Job Record').item.json.address }}",
+            "walkin_datetime": "={{ $('Prepare Job Record').item.json.walkin_datetime }}",
+            "walkin_venue": "={{ $('Prepare Job Record').item.json.walkin_venue }}",
+            "apply_link": "={{ $('Prepare Job Record').item.json.apply_link }}",
+            "contact_email": "={{ $('Prepare Job Record').item.json.contact_email }}",
+            "contact_phone": "={{ $('Prepare Job Record').item.json.contact_phone }}",
+            "contact_whatsapp": "={{ $('Prepare Job Record').item.json.contact_whatsapp }}",
+            "experience_required": "={{ $('Prepare Job Record').item.json.experience_required }}",
+            "salary_ctc": "={{ $('Prepare Job Record').item.json.salary_ctc }}",
+            "company_size_type": "={{ $('Prepare Job Record').item.json.company_size_type }}",
+            "match_score": "={{ $('Prepare Job Record').item.json.match_score }}",
+            "score_breakdown": "={{ $('Prepare Job Record').item.json.score_breakdown }}",
+            "opportunity_type": "={{ $('Prepare Job Record').item.json.opportunity_type }}",
+            "priority_rank": "={{ $('Prepare Job Record').item.json.priority_rank }}",
+            "verification_status": "={{ $('Prepare Job Record').item.json.verification_status }}",
+            "job_status": "new",
+            "raw_text": "={{ $('Prepare Job Record').item.json.raw_text }}",
+            "date_added": "={{ $now.toISO() }}"
+          },
+          "schema": [
+            {
+              "id": "source_id",
+              "displayName": "source_id",
+              "required": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "company_name",
+              "displayName": "company_name",
+              "required": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "job_title",
+              "displayName": "job_title",
+              "required": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "department",
+              "displayName": "department",
+              "required": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "location",
+              "displayName": "location",
+              "required": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "address",
+              "displayName": "address",
+              "required": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "walkin_datetime",
+              "displayName": "walkin_datetime",
+              "required": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "walkin_venue",
+              "displayName": "walkin_venue",
+              "required": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "apply_link",
+              "displayName": "apply_link",
+              "required": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "contact_email",
+              "displayName": "contact_email",
+              "required": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "contact_phone",
+              "displayName": "contact_phone",
+              "required": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "contact_whatsapp",
+              "displayName": "contact_whatsapp",
+              "required": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "experience_required",
+              "displayName": "experience_required",
+              "required": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "salary_ctc",
+              "displayName": "salary_ctc",
+              "required": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "company_size_type",
+              "displayName": "company_size_type",
+              "required": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "match_score",
+              "displayName": "match_score",
+              "required": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "score_breakdown",
+              "displayName": "score_breakdown",
+              "required": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "opportunity_type",
+              "displayName": "opportunity_type",
+              "required": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "priority_rank",
+              "displayName": "priority_rank",
+              "required": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "verification_status",
+              "displayName": "verification_status",
+              "required": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "job_status",
+              "displayName": "job_status",
+              "required": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "raw_text",
+              "displayName": "raw_text",
+              "required": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "date_added",
+              "displayName": "date_added",
+              "required": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "505010b0-c6a2-4709-a3cf-43662c83da01",
+      "name": "Insert Job Row",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1568,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Job Input": {
+      "main": [
+        [
+          {
+            "node": "Has Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Text": {
+      "main": [
+        [
+          {
+            "node": "Extract & Score Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract & Score Job": {
+      "main": [
+        [
+          {
+            "node": "Prepare Job Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Job Record": {
+      "main": [
+        [
+          {
+            "node": "Should Keep",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Keep": {
+      "main": [
+        [
+          {
+            "node": "Find Existing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Existing": {
+      "main": [
+        [
+          {
+            "node": "Is New",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is New": {
+      "main": [
+        [
+          {
+            "node": "Insert Job Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "availableInMCP": true,
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "pinData": {
+    "Job Input": [
+      {
+        "json": {
+          "raw_text": "",
+          "source": "pharma_portal_rss",
+          "apply_link": "",
+          "source_url": ""
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      },
+      {
+        "json": {
+          "raw_text": "",
+          "source": "pharma_portal_rss",
+          "apply_link": "",
+          "source_url": ""
+        },
+        "pairedItem": {
+          "item": 1
+        }
+      }
+    ]
+  },
+  "triggerCount": 0,
+  "active": false
+}

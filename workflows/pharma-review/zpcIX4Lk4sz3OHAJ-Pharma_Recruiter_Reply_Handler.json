@@ -1,0 +1,219 @@
+{
+  "name": "Pharma Recruiter Reply Handler",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Recruiter Reply Classifier & Responder\nWatches your inbox. For each new email, AI classifies it (INTERVIEW_INVITE,\nWALKIN_DETAILS, REQUEST_FOR_DOCS, REJECTION, MORE_INFO_NEEDED, NOT_RECRUITER).\nFor recruiter emails it creates a Gmail DRAFT reply (never sent) and emails you a\nsummary for approval. Non-recruiter emails are ignored. Nothing is auto-sent."
+      },
+      "id": "7cd18875-9af7-48cf-8325-9a73cfd79104",
+      "name": "Sticky Note 7cd18875",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        672,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            },
+            {}
+          ]
+        },
+        "maxResults": 50,
+        "filters": {
+          "readStatus": "unread"
+        }
+      },
+      "id": "96fad32d-ad9b-48a9-8112-e571ae88415a",
+      "name": "On Incoming Email",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        0
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "5U565mPbvviYntTn",
+          "name": "Gmail OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4-0314",
+          "mode": "list",
+          "cachedResultName": "GPT-4-0314"
+        },
+        "responses": {
+          "values": [
+            {
+              "role": "assistant",
+              "content": "=From: {{ $json.from.text }}\nSubject: {{ $json.subject }}\n\nBody:\n{{ $json.text }}"
+            },
+            {}
+          ]
+        },
+        "simplify": false,
+        "builtInTools": {
+          "webSearch": {
+            "searchContextSize": "medium",
+            "city": "Vadodara "
+          },
+          "fileSearch": {
+            "vectorStoreIds": "[]"
+          },
+          "codeInterpreter": false
+        },
+        "options": {
+          "maxTokens": 15000,
+          "temperature": 0.3
+        }
+      },
+      "id": "525e3aee-11bc-419b-aeb7-1b7fbfaea54d",
+      "name": "Classify & Draft",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [
+        224,
+        0
+      ],
+      "alwaysOutputData": false,
+      "executeOnce": false,
+      "retryOnFail": false,
+      "credentials": {
+        "openAiApi": {
+          "id": "WuoCeY8PzF9F7XNb",
+          "name": "OpenAI account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "let ai = null;\ntry {\n  const raw = $json.output[0].content[0].text;\n  ai = (typeof raw === 'string') ? JSON.parse(raw) : raw;\n} catch (e) { ai = null; }\n\nconst em = $(\"On Incoming Email\").item.json;\nconst fromText = (em.from && em.from.text) ? em.from.text : '';\nconst fromAddr = (em.from && em.from.value && em.from.value[0]) ? em.from.value[0].address : '';\nconst subject = em.subject || '';\nconst threadId = em.threadId || '';\n\nif (!ai) {\n  return { json: { category: \"NOT_RECRUITER\", is_recruiter: false, confidence: 0, reasoning: \"parse_failed\", draft_reply: \"\", from_text: fromText, from_addr: fromAddr, subject: subject, thread_id: threadId } };\n}\n\nconst category = ai.category || \"NOT_RECRUITER\";\nconst is_recruiter = category !== \"NOT_RECRUITER\";\nconst confidence = Number(ai.confidence) || 0;\n\nreturn { json: {\n  category: category,\n  is_recruiter: is_recruiter,\n  confidence: confidence,\n  low_confidence: confidence < 0.5,\n  reasoning: ai.reasoning || '',\n  draft_reply: ai.draft_reply || '',\n  from_text: fromText,\n  from_addr: fromAddr,\n  subject: subject,\n  thread_id: threadId,\n} };"
+      },
+      "id": "5541f012-3622-4f64-ad27-b63ce31f389a",
+      "name": "Parse Classification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "draft",
+        "emailType": "html",
+        "options": {}
+      },
+      "id": "bf8eee8a-19a2-4809-a2ba-8ceb99398b99",
+      "name": "Create Reply Draft",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        896,
+        0
+      ],
+      "webhookId": "41694321-cc5c-4190-b115-dae2462e2503",
+      "alwaysOutputData": true,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "kQcpB92Z7ROEkkg6",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "<__PLACEHOLDER_VALUE__Candidate email for notifications__>",
+        "subject": "=Recruiter reply: {{ $(\"Parse Classification\").item.json.category }} from {{ $(\"Parse Classification\").item.json.from_text }}",
+        "message": "=<div style=\"font-family:Arial,sans-serif;font-size:14px\">\n<p>A recruiter-related email arrived and a draft reply is ready in your Gmail <strong>Drafts</strong> for your approval.</p>\n<p><strong>From:</strong> {{ $(\"Parse Classification\").item.json.from_text }}<br>\n<strong>Subject:</strong> {{ $(\"Parse Classification\").item.json.subject }}<br>\n<strong>Classification:</strong> {{ $(\"Parse Classification\").item.json.category }} (confidence {{ $(\"Parse Classification\").item.json.confidence }})<br>\n<strong>Why:</strong> {{ $(\"Parse Classification\").item.json.reasoning }}</p>\n{{ $(\"Parse Classification\").item.json.low_confidence ? \"<p style=\\\"color:#b00\\\"><strong>LOW CONFIDENCE - review carefully before sending.</strong></p>\" : \"\" }}\n<hr>\n<p><strong>Drafted reply:</strong></p>\n<pre style=\"white-space:pre-wrap;background:#f6f6f6;padding:10px;border-radius:6px\">{{ $(\"Parse Classification\").item.json.draft_reply }}</pre>\n<p style=\"color:#555\">Nothing has been sent. Open Gmail Drafts to review, edit, and send.</p>\n</div>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "f30c7c23-a69c-4a88-9477-058bb9c55abd",
+      "name": "Notify Candidate",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1120,
+        0
+      ],
+      "webhookId": "f2a3fefd-d992-446e-8947-13af3b6c9e3f",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "5U565mPbvviYntTn",
+          "name": "Gmail OAuth2 API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "On Incoming Email": {
+      "main": [
+        [
+          {
+            "node": "Classify & Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify & Draft": {
+      "main": [
+        [
+          {
+            "node": "Parse Classification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Classification": {
+      "main": [
+        [
+          {
+            "node": "Create Reply Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Reply Draft": {
+      "main": [
+        [
+          {
+            "node": "Notify Candidate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "availableInMCP": true,
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "pinData": {},
+  "triggerCount": 0,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  }
+}

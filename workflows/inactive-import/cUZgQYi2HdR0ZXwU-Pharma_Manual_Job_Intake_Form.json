@@ -1,0 +1,268 @@
+{
+  "name": "[Review before activation] Pharma Manual Job Intake Form",
+  "nodes": [
+    {
+      "id": "8f602820-af55-47ed-84e2-eef50c552de0",
+      "name": "Sticky Note 8f602820",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        448,
+        256
+      ],
+      "parameters": {
+        "content": "## Manual Paste Intake Form\nPublic form to add a job by pasting a link and/or details.\nSubmissions go to the Pharma Job Processing Engine for scoring, dedup, and storage.\nEmpty submissions get a friendly \"add details\" message and are not processed."
+      }
+    },
+    {
+      "id": "62432028-300e-477e-9327-806c9e5eb4e5",
+      "name": "Add a Pharma Job",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.6,
+      "position": [
+        0,
+        96
+      ],
+      "parameters": {
+        "authentication": "none",
+        "formTitle": "Add a Pharma Job",
+        "formDescription": "Paste a job link and/or the job details. It will be scored and added to your tracker if it matches your QA profile.",
+        "responseMode": "lastNode",
+        "formFields": {
+          "values": [
+            {
+              "fieldName": "Job link",
+              "fieldType": "text",
+              "placeholder": "https://... (optional)",
+              "requiredField": false
+            },
+            {
+              "fieldName": "Job details / paste text",
+              "fieldType": "textarea",
+              "placeholder": "Paste the full job posting text here",
+              "requiredField": false
+            },
+            {
+              "fieldName": "Source note",
+              "fieldType": "text",
+              "placeholder": "e.g. seen on Naukri (optional)",
+              "requiredField": false
+            }
+          ]
+        },
+        "options": {
+          "buttonLabel": "Add Job",
+          "path": "add-pharma-job"
+        }
+      },
+      "webhookId": "fb9dc630-b196-4cf1-8a32-bb69c5bfdbad"
+    },
+    {
+      "id": "6ccabfb4-9240-455e-b597-bbde2394ccc0",
+      "name": "Build Job Record",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        96
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const j = $json;\nconst link = (j['Job link'] || '').trim();\nconst details = (j['Job details / paste text'] || '').trim();\nconst note = (j['Source note'] || '').trim();\n\nconst parts = [];\nif (details) parts.push(details);\nif (link) parts.push('Link: ' + link);\nif (note) parts.push('Source note: ' + note);\nconst raw_text = parts.join('\\n');\n\nconst has_content = (details.length > 0 || link.length > 0);\n\nreturn { json: {\n  has_content: has_content,\n  raw_text: raw_text,\n  source: 'manual_form',\n  apply_link: link,\n  source_url: link,\n} };"
+      }
+    },
+    {
+      "id": "ec23260e-09fe-45ba-ac80-08b3ca84805b",
+      "name": "Has Content",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        448,
+        96
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "hascontent",
+              "leftValue": "={{ $json.has_content }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "26c55f8d-829a-4639-bd43-1d507a5f1dab",
+      "name": "Send to Engine",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        672,
+        0
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "Wu57RT3M2MP7QqRV",
+          "cachedResultName": "Pharma Job Processing Engine"
+        },
+        "mode": "once",
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "raw_text": "={{ $json.raw_text }}",
+            "source": "={{ $json.source }}",
+            "apply_link": "={{ $json.apply_link }}",
+            "source_url": "={{ $json.source_url }}"
+          },
+          "schema": [
+            {
+              "id": "raw_text",
+              "displayName": "raw_text",
+              "required": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "apply_link",
+              "displayName": "apply_link",
+              "required": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source_url",
+              "displayName": "source_url",
+              "required": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "matchingColumns": []
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "ba5c6c04-1da1-4c77-ba13-25891375eb10",
+      "name": "Confirmation",
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.5,
+      "position": [
+        896,
+        0
+      ],
+      "parameters": {
+        "operation": "completion",
+        "respondWith": "text",
+        "completionTitle": "Job received",
+        "completionMessage": "Thanks! Your job has been sent for scoring. If it matches your QA profile (role + experience), it will appear in your tracker and in the next digest."
+      },
+      "webhookId": "75cf5169-b97d-438b-97e3-b5703281cb7b"
+    },
+    {
+      "id": "0e01e3dc-f751-434d-abd4-e2f299edeece",
+      "name": "Need Details",
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.5,
+      "position": [
+        672,
+        192
+      ],
+      "parameters": {
+        "operation": "completion",
+        "respondWith": "text",
+        "completionTitle": "Please add some details",
+        "completionMessage": "We could not find any job details. Please go back and paste the job text and/or a job link, then submit again."
+      },
+      "webhookId": "11750c86-5f82-4774-a52d-42ccfb81986f"
+    }
+  ],
+  "connections": {
+    "Add a Pharma Job": {
+      "main": [
+        [
+          {
+            "node": "Build Job Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Job Record": {
+      "main": [
+        [
+          {
+            "node": "Has Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Content": {
+      "main": [
+        [
+          {
+            "node": "Send to Engine",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Need Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to Engine": {
+      "main": [
+        [
+          {
+            "node": "Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "availableInMCP": true
+  },
+  "staticData": null,
+  "pinData": {},
+  "triggerCount": 0,
+  "active": false
+}

@@ -1,0 +1,421 @@
+{
+  "name": "Pharma QA Job Engine",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Pharma QA Job Engine\nPaste a job link/text into the form. The engine:\n1. Builds a deduped record (source_id from the link/text).\n2. Uses an AI agent to extract facts (never invents contacts/dates/salary), score 0-100,\n   and prepare ATS resume, cover letter, LinkedIn content, recruiter keywords, outreach\n   draft, and interview Q&A — only for relevant pharma QA roles.\n3. Filters out non-pharma-QA / wrong-experience jobs.\n4. Upserts into the \"Pharma QA Jobs\" data table (re-submitting the same link updates it).\n\nNote: automated scraping of LinkedIn/Naukri/Indeed/Foundit is not reliable — those\nsites block bots. This engine is the paste-in intake + processing core.",
+        "height": 320,
+        "width": 460
+      },
+      "id": "97856784-feb9-469a-a7e6-11a7469f2cf7",
+      "name": "Sticky Note 97856784",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        736,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "formTitle": "Add a Pharma QA Job",
+        "formDescription": "Paste a job link and/or the job text. The engine filters, scores, dedupes, and prepares resume + interview content, then saves it to your Pharma QA Jobs table.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Job link",
+              "fieldName": "Job link",
+              "placeholder": "https://... (career page, Naukri, LinkedIn, etc.)"
+            },
+            {
+              "fieldLabel": "Job details / paste text",
+              "fieldType": "textarea",
+              "fieldName": "Job details / paste text",
+              "placeholder": "Paste the full job posting / walk-in notice text here (company, role, experience, location, dates, contacts)."
+            },
+            {
+              "fieldLabel": "Source note",
+              "fieldName": "Source note",
+              "placeholder": "e.g. seen on Naukri / company site"
+            }
+          ]
+        },
+        "options": {
+          "path": "pharma-job-intake",
+          "respondWithOptions": {
+            "values": {
+              "formSubmittedText": "Got it. The job is being analyzed, scored, and prepared. Check your \"Pharma QA Jobs\" data table for the result."
+            }
+          }
+        }
+      },
+      "id": "4e87c323-69d8-44a0-bb9c-7a3d1d0a05a3",
+      "name": "Add a Pharma Job",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.6,
+      "position": [
+        0,
+        112
+      ],
+      "webhookId": "2ed33793-6a43-482b-81eb-9dc188c8c22e"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const link = ($json['Job link'] || '').toString().trim();\nconst details = ($json['Job details / paste text'] || '').toString().trim();\nconst note = ($json['Source note'] || '').toString().trim();\nconst parts = [];\nif (details) parts.push(details);\nif (link) parts.push('Link: ' + link);\nif (note) parts.push('Source note: ' + note);\nconst raw = parts.join('\\n');\nconst hasContent = (details.length + link.length) > 0;\nlet key = link;\nif (!key) { key = details.toLowerCase().replace(/\\s+/g, ' ').slice(0, 180); }\nkey = key.toLowerCase().replace(/^https?:\\/\\//, '').replace(/\\/+$/, '').trim();\nreturn {\n  has_content: hasContent,\n  raw_text: raw,\n  source: 'manual_form',\n  source_note: note,\n  apply_link: link,\n  source_url: link,\n  source_id: key,\n};"
+      },
+      "id": "eaf3c54d-7850-4be1-a1c1-eaf4b7696373",
+      "name": "Build Job Record",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-content",
+              "leftValue": "={{ $json.has_content }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "12b58f1b-a94c-4aee-8527-7d80fd83486f",
+      "name": "Has Content",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        448,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Analyze this job posting text and return the structured JSON:\n\n{{ $json.raw_text }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "You are a pharma job-search analyst and career-content assistant.\nYou receive raw text (and maybe a link) describing ONE job opening.\n\nCANDIDATE PROFILE (the person you are helping):\n- Diploma in Biotechnology, Parul University, India\n- 2 years experience in Pharmaceutical Quality Assurance (QA)\n- Hands-on exposure to Tablet Compression / OSD (Oral Solid Dosage) manufacturing\n- Target locations: Vadodara, Ahmedabad, Gujarat, and nearby India\n- Goal: get a pharma QA job fast with minimum manual effort\n\nTARGET ROLES (only these count as relevant):\nQA Executive / Officer, IPQA Executive / Officer, Production QA, Manufacturing QA,\nDocumentation QA, QC Support, BMR/BPR Review, Line Clearance / In-process Quality,\nOSD / Tablet manufacturing roles.\n\nSTRICT RULES:\n1. NEVER guess or invent emails, phone numbers, WhatsApp numbers, interview dates,\n   times, venues, salary/CTC, or addresses. Only extract details that are EXPLICITLY\n   present in the provided text. If a detail is not present, output the exact string\n   \"not verified\". Do not fabricate anything.\n2. Only treat the job as relevant if it is a pharmaceutical QA-type role from the target\n   list AND the experience requirement is compatible with ~2 years (accept ranges like\n   1-3, 2-5, 2-7, or \"2 years\"). Set is_relevant=false for unrelated roles, wrong\n   experience bands, or non-pharma jobs.\n3. opportunity_type must be one of: \"walk-in\", \"direct vacancy\", \"upcoming interview\",\n   or \"unknown\". Prefer \"walk-in\" when a walk-in/interview drive is described.\n4. verification_status must be one of: \"verified\" (official company source with clear\n   contact/details), \"partially verified\" (some details present, others missing), or\n   \"not verified\" (third-party repost or little detail).\n5. match_score is an integer 0-100 combining: role match, experience match, location\n   match, QA/IPQA relevance, OSD/tablet-compression fit, salary clarity, company\n   quality, and hiring urgency (walk-ins and near-term interviews score higher).\n6. Only produce rich career content (resume_summary, resume_bullets, cover_letter,\n   linkedin_headline, linkedin_about, recruiter_keywords, outreach_draft, interview_qa)\n   when is_relevant=true. For irrelevant jobs, set those fields to empty strings/arrays.\n7. Career content must be ATS-optimized, factual to the candidate profile above, and\n   must NOT invent employers, certifications, or years the candidate does not have.\n8. outreach_draft: a short, professional message the candidate could send ONLY to a\n   verified contact. Do NOT include any invented contact address inside it.\n9. interview_qa: concise question + model-answer pairs covering GMP, GDP, QA/IPQA,\n   Tablet Compression, Documentation, BMR/BPR, Deviation, CAPA, Change Control, and\n   Data Integrity / ALCOA+, tailored to this role.\n\nUse \"not verified\" for any missing factual detail. Respond ONLY with the structured\nJSON object required by the output format."
+        }
+      },
+      "id": "3291fc09-4dc7-49ee-aa0e-ae4cf62ba13d",
+      "name": "Analyze & Prepare",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        672,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-5-mini",
+          "cachedResultName": "gpt-5-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "id": "77b1ae24-4781-4373-8de5-45ea0c279b16",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        688,
+        336
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "srC09Q8UBwZckafu",
+          "name": "n8n free OpenAI API credits"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\"company_name\":\"Company Ltd\",\"job_title\":\"IPQA Officer\",\"department\":\"Quality Assurance\",\"location\":\"Vadodara, Gujarat\",\"exact_address\":\"not verified\",\"walkin_date\":\"not verified\",\"walkin_time\":\"not verified\",\"walkin_venue\":\"not verified\",\"apply_link\":\"https://example.com/job\",\"contact_email\":\"not verified\",\"contact_phone\":\"not verified\",\"contact_whatsapp\":\"not verified\",\"experience_required\":\"2-5 years\",\"salary_ctc\":\"not verified\",\"company_type\":\"Large pharmaceutical company\",\"opportunity_type\":\"walk-in\",\"match_score\":88,\"score_reasoning\":\"Short reason for the score.\",\"verification_status\":\"partially verified\",\"is_relevant\":true,\"resume_summary\":\"One-paragraph ATS summary.\",\"resume_bullets\":[\"Bullet one.\",\"Bullet two.\"],\"cover_letter\":\"Cover letter text.\",\"linkedin_headline\":\"Headline text.\",\"linkedin_about\":\"About section text.\",\"recruiter_keywords\":[\"IPQA\",\"GMP\",\"OSD\"],\"outreach_draft\":\"Short professional outreach message.\",\"interview_qa\":\"Q: ... A: ...\"}"
+      },
+      "id": "325e34b4-d65a-4735-9ef8-1c8443fc4813",
+      "name": "Job JSON Parser",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        816,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const na = 'not verified';\nconst data = ($json.output && typeof $json.output === \"object\") ? $json.output : {};\nconst build = $('Build Job Record').item.json;\nconst joinArr = (v) => Array.isArray(v) ? v.join(v.length && String(v[0]).length < 40 ? \", \" : \"\\n\") : (v || \"\");\nreturn {\n  source_id: build.source_id,\n  source: build.source,\n  raw_text: build.raw_text,\n  apply_link: data.apply_link || build.apply_link || na,\n  company_name: data.company_name || na,\n  job_title: data.job_title || na,\n  department: data.department || '',\n  location: data.location || '',\n  exact_address: data.exact_address || na,\n  walkin_date: data.walkin_date || na,\n  walkin_time: data.walkin_time || na,\n  walkin_venue: data.walkin_venue || na,\n  contact_email: data.contact_email || na,\n  contact_phone: data.contact_phone || na,\n  contact_whatsapp: data.contact_whatsapp || na,\n  experience_required: data.experience_required || na,\n  salary_ctc: data.salary_ctc || na,\n  company_type: data.company_type || na,\n  opportunity_type: data.opportunity_type || 'unknown',\n  match_score: typeof data.match_score === 'number' ? data.match_score : 0,\n  score_reasoning: data.score_reasoning || '',\n  verification_status: data.verification_status || na,\n  is_relevant: data.is_relevant === true,\n  resume_summary: data.resume_summary || '',\n  resume_bullets: joinArr(data.resume_bullets),\n  cover_letter: data.cover_letter || '',\n  linkedin_headline: data.linkedin_headline || '',\n  linkedin_about: data.linkedin_about || '',\n  recruiter_keywords: joinArr(data.recruiter_keywords),\n  outreach_draft: data.outreach_draft || '',\n  interview_qa: data.interview_qa || '',\n  processed_at: new Date().toISOString(),\n};"
+      },
+      "id": "dca4d798-a9ec-4848-8946-a260941ce5e4",
+      "name": "Parse AI Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1024,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "is-relevant",
+              "leftValue": "={{ $json.is_relevant }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b233f3da-7708-4e3a-9378-d4bfe52e4798",
+      "name": "Is Relevant Pharma QA",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1248,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "7W79Mbl1S0ayk9jB",
+          "cachedResultName": "Pharma QA Jobs"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "source_id",
+              "keyValue": "={{ $json.source_id }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "source_id"
+          ],
+          "value": {
+            "source_id": "={{ $json.source_id }}",
+            "company_name": "={{ $json.company_name }}",
+            "job_title": "={{ $json.job_title }}",
+            "department": "={{ $json.department }}",
+            "location": "={{ $json.location }}",
+            "exact_address": "={{ $json.exact_address }}",
+            "walkin_date": "={{ $json.walkin_date }}",
+            "walkin_time": "={{ $json.walkin_time }}",
+            "walkin_venue": "={{ $json.walkin_venue }}",
+            "apply_link": "={{ $json.apply_link }}",
+            "contact_email": "={{ $json.contact_email }}",
+            "contact_phone": "={{ $json.contact_phone }}",
+            "contact_whatsapp": "={{ $json.contact_whatsapp }}",
+            "experience_required": "={{ $json.experience_required }}",
+            "salary_ctc": "={{ $json.salary_ctc }}",
+            "company_type": "={{ $json.company_type }}",
+            "opportunity_type": "={{ $json.opportunity_type }}",
+            "match_score": "={{ $json.match_score }}",
+            "score_reasoning": "={{ $json.score_reasoning }}",
+            "verification_status": "={{ $json.verification_status }}",
+            "is_relevant": "={{ $json.is_relevant }}",
+            "source": "={{ $json.source }}",
+            "raw_text": "={{ $json.raw_text }}",
+            "resume_summary": "={{ $json.resume_summary }}",
+            "resume_bullets": "={{ $json.resume_bullets }}",
+            "cover_letter": "={{ $json.cover_letter }}",
+            "linkedin_headline": "={{ $json.linkedin_headline }}",
+            "linkedin_about": "={{ $json.linkedin_about }}",
+            "recruiter_keywords": "={{ $json.recruiter_keywords }}",
+            "outreach_draft": "={{ $json.outreach_draft }}",
+            "interview_qa": "={{ $json.interview_qa }}",
+            "processed_at": "={{ $json.processed_at }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "5d6b7504-4298-4114-abef-c92cc26da392",
+      "name": "Save Job",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1472,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "source": "googleSheets",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "limitRows": true
+      },
+      "type": "n8n-nodes-base.evaluationTrigger",
+      "typeVersion": 4.7,
+      "position": [
+        -144,
+        -144
+      ],
+      "id": "ad750f85-218f-4b44-a581-cc4536514581",
+      "name": "When fetching a dataset row",
+      "retryOnFail": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "oQbdoBEAhF7fjODz",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Add a Pharma Job": {
+      "main": [
+        [
+          {
+            "node": "Build Job Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Job Record": {
+      "main": [
+        [
+          {
+            "node": "Has Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Content": {
+      "main": [
+        [
+          {
+            "node": "Analyze & Prepare",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze & Prepare": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Analyze & Prepare",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Job JSON Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Analyze & Prepare",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Result": {
+      "main": [
+        [
+          {
+            "node": "Is Relevant Pharma QA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Relevant Pharma QA": {
+      "main": [
+        [
+          {
+            "node": "Save Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "availableInMCP": true,
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "saveExecutionProgress": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "timeSavedPerExecution": 3
+  },
+  "staticData": null,
+  "pinData": {},
+  "triggerCount": 1,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  }
+}
